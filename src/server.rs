@@ -242,8 +242,8 @@ async fn upload(
                 warn!("{} sent zero bytes", host);
                 return Err(error::ErrorBadRequest("invalid file size"));
             }
+            // Deduplicate
             if paste_type != PasteType::Oneshot
-                && paste_type != PasteType::RemoteFile
                 && paste_type != PasteType::OneshotUrl
                 && expiry_date.is_none()
                 && !config
@@ -258,7 +258,7 @@ async fn upload(
                     .read()
                     .map_err(|_| error::ErrorInternalServerError("cannot acquire config"))?;
                 if let Some(file) = Directory::try_from(config.server.upload_path.as_path())?
-                    .get_file(bytes_checksum)
+                    .get_file(&bytes_checksum)
                 {
                     urls.push(format!(
                         "{}/{}\n",
@@ -1134,7 +1134,7 @@ mod tests {
         let body_bytes = actix_web::body::to_bytes(body).await?;
         assert_eq!(
             "3b5eeeee7a7326cd6141f54820e6356a0e9d1dd4021407cb1d5e9de9f034ed2f",
-            util::sha256_digest(&*body_bytes)?
+            util::sha256_digest(&*body_bytes)?.to_string()
         );
 
         fs::remove_file(file_name)?;
@@ -1198,7 +1198,7 @@ mod tests {
         let body_bytes = actix_web::body::to_bytes(body).await?;
         assert_eq!(
             "3b5eeeee7a7326cd6141f54820e6356a0e9d1dd4021407cb1d5e9de9f034ed2f",
-            util::sha256_digest(&*body_bytes)?
+            util::sha256_digest(&*body_bytes)?.to_string()
         );
 
         fs::remove_file(file_name)?;

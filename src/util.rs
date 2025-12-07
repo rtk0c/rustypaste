@@ -1,10 +1,10 @@
+use crate::file::Sha256Digest;
 use crate::paste::PasteType;
 use actix_web::{error, Error as ActixError};
 use glob::glob;
 use lazy_regex::{lazy_regex, Lazy, Regex};
 use path_clean::PathClean;
 use ring::digest::{Context, SHA256};
-use std::fmt::Write;
 use std::io::{BufReader, Read};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
 use std::path::{Path, PathBuf};
@@ -85,7 +85,7 @@ pub fn get_expired_files(base_path: &Path) -> Vec<PathBuf> {
 }
 
 /// Returns the SHA256 digest of the given input.
-pub fn sha256_digest<R: Read>(input: R) -> Result<String, ActixError> {
+pub fn sha256_digest<R: Read>(input: R) -> Result<Sha256Digest, ActixError> {
     let mut reader = BufReader::new(input);
     let mut context = Context::new(&SHA256);
     let mut buffer = [0; 1024];
@@ -97,16 +97,9 @@ pub fn sha256_digest<R: Read>(input: R) -> Result<String, ActixError> {
             break;
         }
     }
-    Ok(context
-        .finish()
-        .as_ref()
-        .iter()
-        .collect::<Vec<&u8>>()
-        .iter()
-        .try_fold::<String, _, IoResult<String>>(String::new(), |mut output, b| {
-            write!(output, "{b:02x}").map_err(|e| IoError::other(e.to_string()))?;
-            Ok(output)
-        })?)
+    // unwrap: we SHA-256 by definition produces 256 bits = 32 bytes of output
+    let digest: [u8; 32] = context.finish().as_ref().try_into().unwrap();
+    Ok(Sha256Digest(digest))
 }
 
 /// Joins the paths whilst ensuring the path doesn't drastically change.
@@ -192,11 +185,11 @@ mod tests {
     fn test_sha256sum() -> Result<(), ActixError> {
         assert_eq!(
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-            sha256_digest(String::from("test").as_bytes())?
+            sha256_digest(String::from("test").as_bytes())?.to_string()
         );
         assert_eq!(
             "2fc36f72540bb9145e95e67c41dccdc440c95173257032e32e111ebd7b6df960",
-            sha256_digest(env!("CARGO_PKG_NAME").as_bytes())?
+            sha256_digest(env!("CARGO_PKG_NAME").as_bytes())?.to_string()
         );
         Ok(())
     }

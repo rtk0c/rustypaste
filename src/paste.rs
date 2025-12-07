@@ -255,9 +255,10 @@ impl Paste {
             .map_err(|_| error::ErrorInternalServerError("cannot acquire config"))?;
         let bytes_checksum = util::sha256_digest(&*bytes)?;
         self.data = bytes;
+        // TODO(rtk0c) either move server.rs dedup logic to Paste, or move this into server.rs
         if !config.paste.duplicate_files.unwrap_or(true) && expiry_date.is_none() {
             if let Some(file) =
-                Directory::try_from(config.server.upload_path.as_path())?.get_file(bytes_checksum)
+                Directory::try_from(config.server.upload_path.as_path())?.get_file(&bytes_checksum)
             {
                 return Ok(file
                     .path
@@ -555,7 +556,7 @@ mod tests {
             .join(file_name);
         assert_eq!(
             "3b5eeeee7a7326cd6141f54820e6356a0e9d1dd4021407cb1d5e9de9f034ed2f",
-            util::sha256_digest(&*paste.data)?
+            util::sha256_digest(&*paste.data)?.to_string()
         );
         fs::remove_file(file_path)?;
 
@@ -585,7 +586,7 @@ mod tests {
             .join(file_name);
         assert_eq!(
             "3b5eeeee7a7326cd6141f54820e6356a0e9d1dd4021407cb1d5e9de9f034ed2f",
-            util::sha256_digest(&*paste.data)?
+            util::sha256_digest(&*paste.data)?.to_string()
         );
         fs::remove_file(file_path)?;
 
