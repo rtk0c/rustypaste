@@ -102,6 +102,20 @@ impl Paste {
         header_filename: Option<String>,
         config: &Config,
     ) -> Result<String, Error> {
+        let digest = util::sha256_digest(&*self.data)?;
+        if !config.paste.duplicate_files.unwrap_or(true) && expiry_date.is_none() {
+            if let Some(file) =
+                Directory::try_from(config.server.upload_path.as_path())?.get_file(&digest)
+            {
+                return Ok(file
+                    .path
+                    .file_name()
+                    .map(|v| v.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_string());
+            }
+        }
+
         let file_type = infer::get(&self.data);
         if let Some(file_type) = file_type {
             for mime_type in &config.paste.mime_blacklist {
@@ -253,21 +267,7 @@ impl Paste {
         let config = config
             .read()
             .map_err(|_| error::ErrorInternalServerError("cannot acquire config"))?;
-        let bytes_checksum = util::sha256_digest(&*bytes)?;
         self.data = bytes;
-        // TODO(rtk0c) either move server.rs dedup logic to Paste, or move this into server.rs
-        if !config.paste.duplicate_files.unwrap_or(true) && expiry_date.is_none() {
-            if let Some(file) =
-                Directory::try_from(config.server.upload_path.as_path())?.get_file(&bytes_checksum)
-            {
-                return Ok(file
-                    .path
-                    .file_name()
-                    .map(|v| v.to_string_lossy())
-                    .unwrap_or_default()
-                    .to_string());
-            }
-        }
         self.store_file(file_name, expiry_date, header_filename, &config)
     }
 

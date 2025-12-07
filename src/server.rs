@@ -242,35 +242,6 @@ async fn upload(
                 warn!("{} sent zero bytes", host);
                 return Err(error::ErrorBadRequest("invalid file size"));
             }
-            // Deduplicate
-            if paste_type != PasteType::Oneshot
-                && paste_type != PasteType::OneshotUrl
-                && expiry_date.is_none()
-                && !config
-                    .read()
-                    .map_err(|_| error::ErrorInternalServerError("cannot acquire config"))?
-                    .paste
-                    .duplicate_files
-                    .unwrap_or(true)
-            {
-                let bytes_checksum = util::sha256_digest(&*bytes)?;
-                let config = config
-                    .read()
-                    .map_err(|_| error::ErrorInternalServerError("cannot acquire config"))?;
-                if let Some(file) = Directory::try_from(config.server.upload_path.as_path())?
-                    .get_file(&bytes_checksum)
-                {
-                    urls.push(format!(
-                        "{}/{}\n",
-                        server_url,
-                        file.path
-                            .file_name()
-                            .map(|v| v.to_string_lossy())
-                            .unwrap_or_default()
-                    ));
-                    continue;
-                }
-            }
             let mut paste = Paste {
                 data: bytes.to_vec(),
                 type_: paste_type,
