@@ -5,7 +5,7 @@ use awc::ClientBuilder;
 use hotwatch::notify::event::ModifyKind;
 use hotwatch::{Event, EventKind, Hotwatch};
 use rustypaste::config::{Config, ServerConfig};
-use rustypaste::file::{PasteIndex, PasteIndexError};
+use rustypaste::file::PasteIndex;
 use rustypaste::middleware::ContentLengthLimiter;
 use rustypaste::paste::PasteType;
 use rustypaste::server::{self};
@@ -163,10 +163,7 @@ async fn main() -> IoResult<()> {
     let (config, server_config, _hotwatch) = setup(&PathBuf::new())?;
 
     let mut paste_index = PasteIndex::new();
-    match paste_index.populate(server_config.upload_path.as_path()) {
-        Ok(_) => {}
-        Err(PasteIndexError::NonUtf8Chars) => error!("directory contains non-UTF-8 chars"),
-    }
+    paste_index.populate(server_config.upload_path.as_path());
     let paste_index = Data::new(RwLock::new(paste_index));
 
     // Create an HTTP server.

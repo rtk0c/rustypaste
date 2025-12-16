@@ -32,14 +32,6 @@ impl TryFrom<&str> for Sha256Digest {
 #[derive(Debug)]
 pub struct PasteIndex(pub HashMap<Sha256Digest, PathBuf>);
 
-/// PasteIndexError
-#[derive(Debug)]
-pub enum PasteIndexError {
-    /// Directory contains non-UTF-8 chars
-    // NOTE(rtk0c): fuck glob crate
-    NonUtf8Chars,
-}
-
 impl PasteIndex {
     /// Create empty content index
     pub fn new() -> Self {
@@ -47,13 +39,11 @@ impl PasteIndex {
     }
 
     /// Populate from directory content
-    pub fn populate(&mut self, directory: &Path) -> Result<(), PasteIndexError> {
+    pub fn populate(&mut self, directory: &Path) {
         let glob_result = glob(
-            directory
-                .join("**")
-                .join("*")
-                .to_str()
-                .ok_or(PasteIndexError::NonUtf8Chars)?,
+            // ignore None:
+            // everybody yell at the glob crate author for not supporting non-UTF-8 paths
+            directory.join("**").join("*").to_str().unwrap(),
         )
         // ignoring PatternError:
         // concatenating valid path with "**/*" should always produce a valid pattern
@@ -71,8 +61,6 @@ impl PasteIndex {
         for (sha256sum, path) in files_in_dir {
             self.0.insert(sha256sum, path);
         }
-
-        Ok(())
     }
 
     /// Returns the file that matches the given checksum.
@@ -100,13 +88,11 @@ mod tests {
     #[test]
     fn test_file_checksum() -> Result<(), ActixError> {
         let mut index = PasteIndex::new();
-        index
-            .populate(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("img")
-                    .as_path(),
-            )
-            .unwrap();
+        index.populate(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("img")
+                .as_path(),
+        );
         assert_eq!(
             Some(OsString::from("rustypaste_logo.png").as_ref()),
             index

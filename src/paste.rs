@@ -332,7 +332,6 @@ impl Paste {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file::PasteIndexError;
     use crate::random::{RandomURLConfig, RandomURLType};
     use crate::util;
     use actix_web::web::Data;
@@ -356,15 +355,7 @@ mod tests {
         });
 
         let mut paste_index = PasteIndex::new();
-        match paste_index.populate(&config.server.upload_path) {
-            Ok(_) => {}
-            Err(PasteIndexError::NonUtf8Chars) => {
-                // NOTE(rtk0c): work around stupid rustfmt
-                //              yes I'm just a little bit angry when writing this
-                let ctor = ErrorInternalServerError;
-                return Err(ctor("directory contains non-UTF-8 chars"));
-            }
-        }
+        paste_index.populate(&config.server.upload_path);
         let paste_index = RwLock::new(paste_index);
 
         // TEST CASE
