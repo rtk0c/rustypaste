@@ -629,7 +629,7 @@ mod tests {
         config.server.expose_list = Some(true);
 
         let test_upload_dir = "test_upload";
-        fs::create_dir(test_upload_dir)?;
+        fs::create_dir_all(test_upload_dir)?;
         config.server.upload_path = PathBuf::from(test_upload_dir);
 
         let app = test::init_service(
@@ -672,7 +672,7 @@ mod tests {
         config.server.expose_list = Some(true);
 
         let test_upload_dir = "test_upload";
-        fs::create_dir(test_upload_dir)?;
+        fs::create_dir_all(test_upload_dir)?;
         config.server.upload_path = PathBuf::from(test_upload_dir);
 
         let app = test::init_service(
@@ -975,7 +975,7 @@ mod tests {
     #[allow(deprecated)]
     async fn test_upload_duplicate_file() -> Result<(), Error> {
         let test_upload_dir = "test_upload";
-        fs::create_dir(test_upload_dir)?;
+        fs::create_dir_all(test_upload_dir)?;
 
         let mut config = Config::default();
         config.server.upload_path = PathBuf::from(&test_upload_dir);
