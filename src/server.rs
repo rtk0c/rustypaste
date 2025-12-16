@@ -1,6 +1,6 @@
 use crate::auth::{extract_tokens, handle_unauthorized_error, unauthorized_error};
 use crate::config::{Config, LandingPageConfig, TokenType};
-use crate::file::Directory;
+use crate::file::PasteIndex;
 use crate::header::{self, ContentDisposition};
 use crate::mime as mime_util;
 use crate::paste::{Paste, PasteType};
@@ -196,6 +196,7 @@ async fn upload(
     mut payload: Multipart,
     client: web::Data<Client>,
     config: web::Data<RwLock<Config>>,
+    paste_index: web::Data<RwLock<PasteIndex>>,
 ) -> Result<HttpResponse, Error> {
     let connection = request.connection_info().clone();
     let host = connection.realip_remote_addr().unwrap_or("unknown host");
@@ -256,11 +257,18 @@ async fn upload(
                         expiry_date,
                         header_filename,
                         &config,
+                        &paste_index,
                     )?
                 }
                 PasteType::RemoteFile => {
                     paste
-                        .store_remote_file(expiry_date, header_filename, &client, &config)
+                        .store_remote_file(
+                            expiry_date,
+                            header_filename,
+                            &client,
+                            &config,
+                            &paste_index,
+                        )
                         .await?
                 }
                 PasteType::Url | PasteType::OneshotUrl => {
@@ -309,6 +317,7 @@ pub struct ListItem {
 /// Returns the list of files.
 #[get("/list")]
 #[actix_web_grants::protect("TokenType::Auth", ty = TokenType, error = unauthorized_error)]
+
 async fn list(config: web::Data<RwLock<Config>>) -> Result<HttpResponse, Error> {
     let config = config
         .read()
@@ -626,6 +635,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -668,6 +678,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -709,6 +720,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -727,6 +739,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(Config::default())))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .wrap(ContentLengthLimiter::new(Byte::from_u64(1)))
                 .configure(configure_routes),
@@ -753,6 +766,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -789,6 +803,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -815,6 +830,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -859,6 +875,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -909,6 +926,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -971,6 +989,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -1009,6 +1028,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -1067,6 +1087,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(
                     ClientBuilder::new()
                         .timeout(Duration::from_secs(30))
@@ -1128,6 +1149,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config)))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(
                     ClientBuilder::new()
                         .timeout(Duration::from_secs(30))
@@ -1191,6 +1213,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config.clone())))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -1231,6 +1254,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config.clone())))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )
@@ -1293,6 +1317,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(RwLock::new(config.clone())))
+                .app_data(Data::new(RwLock::new(PasteIndex::new())))
                 .app_data(Data::new(Client::default()))
                 .configure(configure_routes),
         )

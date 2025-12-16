@@ -1,62 +1,13 @@
 use crate::util;
-use actix_web::{error, Error as ActixError};
 use glob::glob;
 use hex::FromHexError;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs::File as OsFile;
 use std::path::{Path, PathBuf};
 
-/// [`PathBuf`] wrapper for storing checksums.
-#[derive(Debug)]
-pub struct File {
-    /// Path of the file.
-    pub path: PathBuf,
-    /// SHA256 checksum.
-    pub sha256sum: Sha256Digest,
-}
-
-/// Directory that contains [`File`]s.
-pub struct Directory {
-    /// Files in the directory.
-    pub files: Vec<File>,
-}
-
-impl<'a> TryFrom<&'a Path> for Directory {
-    type Error = ActixError;
-    fn try_from(directory: &'a Path) -> Result<Self, Self::Error> {
-        let files = glob(directory.join("**").join("*").to_str().ok_or_else(|| {
-            error::ErrorInternalServerError("directory contains invalid characters")
-        })?)
-        .map_err(error::ErrorInternalServerError)?
-        .filter_map(Result::ok)
-        .filter(|path| !path.is_dir())
-        .filter_map(|path| match OsFile::open(&path) {
-            Ok(file) => Some((path, file)),
-            _ => None,
-        })
-        .filter_map(|(path, file)| match util::sha256_digest(file) {
-            Ok(sha256sum) => Some(File { path, sha256sum }),
-            _ => None,
-        })
-        .collect();
-        Ok(Self { files })
-    }
-}
-
-impl Directory {
-    /// Returns the file that matches the given checksum.
-    pub fn get_file(self, sha256sum: &Sha256Digest) -> Option<File> {
-        self.files.into_iter().find(|file| {
-            file.sha256sum == *sha256sum
-                && !util::TIMESTAMP_EXTENSION_REGEX.is_match(&file.path.to_string_lossy())
-        })
-    }
-}
-
 /// SHA-256 digest. For use as [`HashMap`] key
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Sha256Digest(pub [u8; 32]);
 
 impl ToString for Sha256Digest {
@@ -78,27 +29,95 @@ impl TryFrom<&str> for Sha256Digest {
 }
 
 /// Index of files by their SHA-256 hash
-#[derive(Serialize, Deserialize)]
-pub struct ContentIndex(pub HashMap<Sha256Digest, String>);
+#[derive(Debug)]
+pub struct PasteIndex(pub HashMap<Sha256Digest, PathBuf>);
+
+/// PasteIndexError
+#[derive(Debug)]
+pub enum PasteIndexError {
+    /// Directory contains non-UTF-8 chars
+    // NOTE(rtk0c): fuck glob crate
+    NonUtf8Chars,
+}
+
+impl PasteIndex {
+    /// Create empty content index
+    pub fn new() -> Self {
+        PasteIndex(HashMap::new())
+    }
+
+    /// Populate from directory content
+    pub fn populate(&mut self, directory: &Path) -> Result<(), PasteIndexError> {
+        let glob_result = glob(
+            directory
+                .join("**")
+                .join("*")
+                .to_str()
+                .ok_or(PasteIndexError::NonUtf8Chars)?,
+        )
+        // ignoring PatternError:
+        // concatenating valid path with "**/*" should always produce a valid pattern
+        .unwrap();
+
+        let files_in_dir = glob_result
+            .filter_map(Result::ok)
+            .filter(|path| !path.is_dir())
+            .filter_map(|path| {
+                let file = OsFile::open(&path).ok()?;
+                let sha256sum = util::sha256_digest(file).ok()?;
+                Some((sha256sum, path))
+            });
+
+        for (sha256sum, path) in files_in_dir {
+            self.0.insert(sha256sum, path);
+        }
+
+        Ok(())
+    }
+
+    /// Returns the file that matches the given checksum.
+    pub fn get_file(&self, sha256sum: &Sha256Digest) -> Option<&PathBuf> {
+        let hash_match = self.0.get(sha256sum)?;
+        if util::TIMESTAMP_EXTENSION_REGEX.is_match(&hash_match.to_string_lossy()) {
+            return None;
+        }
+        Some(hash_match)
+    }
+
+    /// Add item to cache
+    pub fn cache_file(&mut self, sha256sum: Sha256Digest, path: PathBuf) {
+        self.0.insert(sha256sum, path);
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use actix_web::Error as ActixError;
+
     use super::*;
     use std::ffi::OsString;
 
     #[test]
     fn test_file_checksum() -> Result<(), ActixError> {
-        assert_eq!(
-            Some(OsString::from("rustypaste_logo.png").as_ref()),
-            Directory::try_from(
+        let mut index = PasteIndex::new();
+        index
+            .populate(
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("img")
-                    .as_path()
-            )?
-            .get_file(&Sha256Digest::try_from("78b946a10d7c2893eb76833adfe9aaff7bd8f59712653914be669928e88312cd").unwrap())
-            .expect("cannot get file with checksum")
-            .path
-            .file_name()
+                    .as_path(),
+            )
+            .unwrap();
+        assert_eq!(
+            Some(OsString::from("rustypaste_logo.png").as_ref()),
+            index
+                .get_file(
+                    &Sha256Digest::try_from(
+                        "78b946a10d7c2893eb76833adfe9aaff7bd8f59712653914be669928e88312cd"
+                    )
+                    .unwrap()
+                )
+                .expect("cannot get file with checksum")
+                .file_name()
         );
         Ok(())
     }
