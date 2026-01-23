@@ -7,9 +7,10 @@ use crate::paste::{Paste, PasteType};
 use crate::util::{self, safe_path_join};
 use actix_files::NamedFile;
 use actix_multipart::Multipart;
+use actix_web::body::EitherBody;
 use actix_web::http::StatusCode;
 use actix_web::middleware::ErrorHandlers;
-use actix_web::{delete, error, get, post, web, Error, HttpRequest, HttpResponse};
+use actix_web::{delete, error, get, post, web, Error, HttpRequest, HttpResponse, Responder};
 use actix_web_grants::GrantsMiddleware;
 use awc::Client;
 use byte_unit::{Byte, UnitType};
@@ -115,35 +116,48 @@ async fn serve(
                 mime_util::get_mime_type(&config.paste.mime_override, file.to_string())
                     .map_err(error::ErrorInternalServerError)?
             };
-            let response = NamedFile::open(&path)?
+            // Response: use file on disk
+            let resp = NamedFile::open(&path)?
                 .disable_content_disposition()
                 .set_content_type(mime_type)
-                .prefer_utf8(true)
-                .into_response(&request);
+                .prefer_utf8(true);
+            // Add headers. actix_files::NamedFile doesn't support adding headers directly, so we need to wrap it.
+            let mut resp = resp.customize();
+
             if paste_type.is_oneshot() {
-                fs::rename(
-                    &path,
-                    path.with_file_name(format!(
-                        "{}.{}",
-                        file,
-                        util::get_system_time()?.as_millis()
-                    )),
-                )?;
+                let new_path = format!("{}.{}", file, util::get_system_time()?.as_millis());
+                fs::rename(&path, path.with_file_name(new_path))?;
+                // Don't cache oneshot pastes
+                // Note that CustomizeResponder<> move self and turn it. So we have to re-assign.
+                resp = resp.append_header(("Cache-Control", "no-cache"));
+            } else {
+                // 1 year, https://stackoverflow.com/a/25201898
+                resp = resp.append_header(("Cache-Control", "max-age=31536000"));
             }
-            Ok(response)
-        }
-        PasteType::Url => Ok(HttpResponse::Found()
-            .append_header(("Location", fs::read_to_string(&path)?))
-            .finish()),
-        PasteType::OneshotUrl => {
-            let resp = HttpResponse::Found()
-                .append_header(("Location", fs::read_to_string(&path)?))
-                .finish();
-            fs::rename(
-                &path,
-                path.with_file_name(format!("{}.{}", file, util::get_system_time()?.as_millis())),
-            )?;
+
+            let resp = resp.respond_to(&request);
+            // Busywork to turn HttpResponse<EitherBody<BoxBody>> into HttpResponse<BoxBody>. Note EitherBody<T> is like Either<BoxBody, T>.
+            let resp = resp.map_body(|_, body| match body {
+                EitherBody::Left { body } => body,
+                EitherBody::Right { body } => body,
+            });
+
             Ok(resp)
+        }
+        PasteType::Url | PasteType::OneshotUrl => {
+            let mut resp = HttpResponse::Found();
+
+            resp.append_header(("Location", fs::read_to_string(&path)?));
+
+            if paste_type.is_oneshot() {
+                let new_path = format!("{}.{}", file, util::get_system_time()?.as_millis());
+                fs::rename(&path, path.with_file_name(new_path))?;
+                resp.append_header(("Cache-Control", "no-cache"));
+            } else {
+                resp.append_header(("Cache-Control", "max-age=31536000"));
+            }
+
+            Ok(resp.finish())
         }
     }
 }

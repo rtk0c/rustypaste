@@ -73,7 +73,7 @@ impl PasteType {
 
     /// Returns `true` if the variant is [`Oneshot`](Self::Oneshot).
     pub fn is_oneshot(&self) -> bool {
-        self == &Self::Oneshot
+        self == &Self::Oneshot || self == &Self::OneshotUrl
     }
 }
 
